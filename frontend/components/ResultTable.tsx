@@ -1,6 +1,5 @@
-"use client";
-
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { CRMRecord, SkippedRecord } from "@/types/crm";
 import { CRM_FIELDS, CRM_FIELD_LABELS } from "@/types/crm";
 
@@ -11,15 +10,33 @@ interface ResultTableProps {
 
 /**
  * Result table showing imported and skipped records in tab view.
- * Features color-coded rows, download as CSV, and skip reason display.
+ * Features color-coded rows, download as CSV, and virtualization for 10,000+ rows.
  */
 export default function ResultTable({
   importedRecords,
   skippedRecords,
 }: ResultTableProps) {
-  const [activeTab, setActiveTab] = useState<"imported" | "skipped">(
-    "imported"
-  );
+  const [activeTab, setActiveTab] = useState<"imported" | "skipped">("imported");
+
+  const importedParentRef = useRef<HTMLDivElement>(null);
+  const skippedParentRef = useRef<HTMLDivElement>(null);
+
+  const importedVirtualizer = useVirtualizer({
+    count: importedRecords.length,
+    getScrollElement: () => importedParentRef.current,
+    estimateSize: () => 45,
+    overscan: 5,
+  });
+
+  const skippedVirtualizer = useVirtualizer({
+    count: skippedRecords.length,
+    getScrollElement: () => skippedParentRef.current,
+    estimateSize: () => 45,
+    overscan: 5,
+  });
+
+  const importedVirtualItems = importedVirtualizer.getVirtualItems();
+  const skippedVirtualItems = skippedVirtualizer.getVirtualItems();
 
   const handleDownloadCSV = () => {
     if (importedRecords.length === 0) return;
@@ -28,7 +45,6 @@ export default function ResultTable({
     const csvRows = importedRecords.map((record) =>
       CRM_FIELDS.map((field) => {
         const value = record[field] || "";
-        // Escape quotes and wrap in quotes if contains comma or quote
         const escaped = String(value).replace(/"/g, '""');
         return `"${escaped}"`;
       }).join(",")
@@ -101,52 +117,79 @@ export default function ResultTable({
 
       {/* Imported Records Table */}
       {activeTab === "imported" && (
-        <div className="table-container">
+        <div 
+          ref={importedParentRef}
+          className="table-container"
+          style={{ maxHeight: "500px", overflow: "auto" }}
+        >
           {importedRecords.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-surface-400">
               No records were imported
             </div>
           ) : (
-            <table>
-              <thead>
+            <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+              <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                 <tr>
-                  <th className="w-12 text-center">#</th>
+                  <th className="w-12 text-center bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">#</th>
                   {CRM_FIELDS.map((field) => (
-                    <th key={field}>{CRM_FIELD_LABELS[field]}</th>
+                    <th key={field} className="bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">{CRM_FIELD_LABELS[field]}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {importedRecords.map((record, idx) => (
-                  <tr key={idx} className="row-imported">
-                    <td className="text-center text-xs text-surface-400">
-                      {idx + 1}
-                    </td>
-                    {CRM_FIELDS.map((field) => (
-                      <td key={field}>
-                        <span className="max-w-[200px] truncate block">
-                          {field === "crm_status" && record[field] ? (
-                            <span
-                              className={`badge ${
-                                record[field] === "SALE_DONE"
-                                  ? "badge-success"
-                                  : record[field] === "BAD_LEAD"
-                                    ? "badge-danger"
-                                    : record[field] === "GOOD_LEAD_FOLLOW_UP"
-                                      ? "badge-info"
-                                      : "badge-warning"
-                              }`}
-                            >
-                              {record[field]}
-                            </span>
-                          ) : (
-                            record[field] || "—"
-                          )}
-                        </span>
+                {importedVirtualItems.length > 0 && (
+                  <tr style={{ height: `${importedVirtualItems[0].start}px` }} />
+                )}
+
+                {importedVirtualItems.map((virtualRow) => {
+                  const record = importedRecords[virtualRow.index];
+                  return (
+                    <tr
+                      key={virtualRow.key}
+                      className="row-imported"
+                      data-index={virtualRow.index}
+                      ref={importedVirtualizer.measureElement}
+                    >
+                      <td className="text-center text-xs text-surface-400">
+                        {virtualRow.index + 1}
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      {CRM_FIELDS.map((field) => (
+                        <td key={field}>
+                          <span className="max-w-[200px] truncate block">
+                            {field === "crm_status" && record[field] ? (
+                              <span
+                                className={`badge ${
+                                  record[field] === "SALE_DONE"
+                                    ? "badge-success"
+                                    : record[field] === "BAD_LEAD"
+                                      ? "badge-danger"
+                                      : record[field] === "GOOD_LEAD_FOLLOW_UP"
+                                        ? "badge-info"
+                                        : "badge-warning"
+                                }`}
+                              >
+                                {record[field]}
+                              </span>
+                            ) : (
+                              record[field] || "—"
+                            )}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+
+                {importedVirtualItems.length > 0 && (
+                  <tr
+                    style={{
+                      height: `${
+                        importedVirtualizer.getTotalSize() -
+                        importedVirtualItems[importedVirtualItems.length - 1].end
+                      }px`,
+                    }}
+                  />
+                )}
               </tbody>
             </table>
           )}
@@ -155,37 +198,64 @@ export default function ResultTable({
 
       {/* Skipped Records Table */}
       {activeTab === "skipped" && (
-        <div className="table-container">
+        <div 
+          ref={skippedParentRef}
+          className="table-container"
+          style={{ maxHeight: "500px", overflow: "auto" }}
+        >
           {skippedRecords.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-surface-400">
               No records were skipped — perfect import! 🎉
             </div>
           ) : (
-            <table>
-              <thead>
+            <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+              <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                 <tr>
-                  <th className="w-16">Row #</th>
-                  <th>Skip Reason</th>
-                  <th>Raw Data</th>
+                  <th className="w-16 bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">Row #</th>
+                  <th className="bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">Skip Reason</th>
+                  <th className="bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">Raw Data</th>
                 </tr>
               </thead>
               <tbody>
-                {skippedRecords.map((record, idx) => (
-                  <tr key={idx} className="row-skipped">
-                    <td className="font-medium">{record.rowNumber}</td>
-                    <td>
-                      <span className="badge badge-danger">
-                        {record.reason}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="max-w-[400px] truncate block text-xs text-surface-500 dark:text-surface-400">
-                        {JSON.stringify(record.data).slice(0, 150)}
-                        {JSON.stringify(record.data).length > 150 && "..."}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {skippedVirtualItems.length > 0 && (
+                  <tr style={{ height: `${skippedVirtualItems[0].start}px` }} />
+                )}
+
+                {skippedVirtualItems.map((virtualRow) => {
+                  const record = skippedRecords[virtualRow.index];
+                  return (
+                    <tr
+                      key={virtualRow.key}
+                      className="row-skipped"
+                      data-index={virtualRow.index}
+                      ref={skippedVirtualizer.measureElement}
+                    >
+                      <td className="font-medium">{record.rowNumber}</td>
+                      <td>
+                        <span className="badge badge-danger">
+                          {record.reason}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="max-w-[400px] truncate block text-xs text-surface-500 dark:text-surface-400">
+                          {JSON.stringify(record.data).slice(0, 150)}
+                          {JSON.stringify(record.data).length > 150 && "..."}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {skippedVirtualItems.length > 0 && (
+                  <tr
+                    style={{
+                      height: `${
+                        skippedVirtualizer.getTotalSize() -
+                        skippedVirtualItems[skippedVirtualItems.length - 1].end
+                      }px`,
+                    }}
+                  />
+                )}
               </tbody>
             </table>
           )}

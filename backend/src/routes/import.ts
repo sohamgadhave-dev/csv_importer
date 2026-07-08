@@ -132,17 +132,59 @@ router.post(
       // Sort by row number since parallel batches may finish out of order
       allSkippedRecords.sort((a, b) => a.rowNumber - b.rowNumber);
 
+      // --- DUPLICATE LEAD DETECTION (Intra-CSV) ---
+      console.log('🔍 Checking for duplicate leads...');
+      const seenEmails = new Set<string>();
+      const seenPhones = new Set<string>();
+      
+      const uniqueRecords: CRMRecord[] = [];
+      const duplicateRecords: SkippedRecord[] = [];
+
+      for (let i = 0; i < allImportedRecords.length; i++) {
+        const record = allImportedRecords[i];
+        let isDuplicate = false;
+        let duplicateReason = '';
+
+        if (record.email && seenEmails.has(record.email.toLowerCase())) {
+          isDuplicate = true;
+          duplicateReason = `Duplicate email: ${record.email}`;
+        } else if (
+          record.mobile_without_country_code && 
+          seenPhones.has(record.mobile_without_country_code)
+        ) {
+          isDuplicate = true;
+          duplicateReason = `Duplicate phone: ${record.mobile_without_country_code}`;
+        }
+
+        if (isDuplicate) {
+          duplicateRecords.push({
+            rowNumber: -1, // We lost exact row number during AI processing batching, but it's a duplicate
+            data: record as unknown as Record<string, string>,
+            reason: duplicateReason,
+          });
+        } else {
+          uniqueRecords.push(record);
+          if (record.email) seenEmails.add(record.email.toLowerCase());
+          if (record.mobile_without_country_code) seenPhones.add(record.mobile_without_country_code);
+        }
+      }
+
+      if (duplicateRecords.length > 0) {
+        console.log(`⚠️ Found ${duplicateRecords.length} duplicate records.`);
+        allSkippedRecords.push(...duplicateRecords);
+      }
+
       console.log(
-        `✅ Processing complete: ${allImportedRecords.length} imported, ${allSkippedRecords.length} skipped`
+        `✅ Processing complete: ${uniqueRecords.length} imported, ${allSkippedRecords.length} skipped`
       );
 
       // 7. Save to MongoDB
       const importRecord = await Import.create({
         browserId,
         originalFilename,
-        totalImported: allImportedRecords.length,
+        totalImported: uniqueRecords.length,
         totalSkipped: allSkippedRecords.length,
-        crmRecords: allImportedRecords,
+        crmRecords: uniqueRecords,
         skippedRecords: allSkippedRecords,
       });
 
@@ -152,9 +194,9 @@ router.post(
       res.write(`data: ${JSON.stringify({
         type: 'complete',
         importId: importRecord._id,
-        importedRecords: allImportedRecords,
+        importedRecords: uniqueRecords,
         skippedRecords: allSkippedRecords,
-        totalImported: allImportedRecords.length,
+        totalImported: uniqueRecords.length,
         totalSkipped: allSkippedRecords.length,
       })}\n\n`);
 

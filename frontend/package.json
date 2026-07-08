@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.5",
     "next": "14.2.35",
     "papaparse": "^5.5.4",
     "react": "^18",

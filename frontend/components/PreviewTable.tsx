@@ -1,4 +1,5 @@
-"use client";
+import { useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface PreviewTableProps {
   rows: Record<string, string>[];
@@ -9,7 +10,7 @@ interface PreviewTableProps {
 
 /**
  * Preview table showing raw CSV data before import.
- * Features sticky header, scroll, row count, and confirm button.
+ * Features virtualization for handling 10,000+ rows smoothly.
  */
 export default function PreviewTable({
   rows,
@@ -17,6 +18,17 @@ export default function PreviewTable({
   onConfirm,
   isLoading = false,
 }: PreviewTableProps) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 45, // Expected row height in px
+    overscan: 5,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+
   return (
     <div className="animate-slide-up space-y-4">
       {/* Header with row count */}
@@ -48,41 +60,61 @@ export default function PreviewTable({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="table-container">
-        <table>
-          <thead>
+      {/* Table - Virtualized */}
+      <div
+        ref={parentRef}
+        className="table-container"
+        style={{ maxHeight: "500px", overflow: "auto" }}
+      >
+        <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+          <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
             <tr>
-              <th className="w-12 text-center">#</th>
+              <th className="w-12 text-center bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">#</th>
               {columns.map((col) => (
-                <th key={col}>{col}</th>
+                <th key={col} className="bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">{col}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, 100).map((row, idx) => (
-              <tr key={idx}>
-                <td className="text-center text-xs text-surface-400">
-                  {idx + 1}
-                </td>
-                {columns.map((col) => (
-                  <td key={col}>
-                    <span className="max-w-[200px] truncate block">
-                      {row[col] || "—"}
-                    </span>
+            {virtualItems.length > 0 && (
+              <tr style={{ height: `${virtualItems[0].start}px` }} />
+            )}
+            
+            {virtualItems.map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              return (
+                <tr
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                >
+                  <td className="text-center text-xs text-surface-400">
+                    {virtualRow.index + 1}
                   </td>
-                ))}
-              </tr>
-            ))}
+                  {columns.map((col) => (
+                    <td key={col}>
+                      <span className="max-w-[200px] truncate block">
+                        {row[col] || "—"}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+
+            {virtualItems.length > 0 && (
+              <tr
+                style={{
+                  height: `${
+                    rowVirtualizer.getTotalSize() -
+                    virtualItems[virtualItems.length - 1].end
+                  }px`,
+                }}
+              />
+            )}
           </tbody>
         </table>
       </div>
-
-      {rows.length > 100 && (
-        <p className="text-center text-xs text-surface-400 dark:text-surface-500">
-          Showing first 100 of {rows.length.toLocaleString()} rows
-        </p>
-      )}
 
       {/* Confirm Button */}
       <div className="flex justify-center pt-2">
