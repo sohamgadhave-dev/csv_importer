@@ -1,0 +1,179 @@
+/**
+ * Import route — handles CSV upload, AI processing, and record creation.
+ * POST /api/import
+ */
+
+import { Router, Request, Response, NextFunction } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import { uploadMiddleware } from '../middleware/upload';
+import { parseCSVFile } from '../services/csvParser';
+import { splitIntoBatches } from '../services/batchSplitter';
+import { extractCRMRecords } from '../services/aiExtractor';
+import { validateAndCleanRecords } from '../services/recordValidator';
+import { Import } from '../models/Import';
+import { BATCH_SIZE } from '../config/constants';
+import type { CRMRecord, SkippedRecord } from '../types/crm';
+
+const router = Router();
+
+/**
+ * POST /api/import
+ * Accepts a CSV file upload, processes it through Gemini AI,
+ * validates the results, saves to MongoDB, and returns the import summary.
+ */
+router.post(
+  '/',
+  uploadMiddleware.single('file'),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      // 1. Validate file exists
+      if (!req.file) {
+        res.status(400).json({
+          error: 'No file provided. Please upload a CSV file.',
+          code: 'NO_FILE',
+        });
+        return;
+      }
+
+      // 2. Set headers for SSE (Server-Sent Events)
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      // 3. Extract or generate browserId for session isolation
+      let browserId = req.cookies?.browserId ||
+        req.headers['x-browser-id'] as string ||
+        req.body?.browserId;
+
+      if (!browserId) {
+        browserId = uuidv4();
+      }
+
+      // Set browserId cookie for future requests
+      // Note: we can still set cookies even with text/event-stream, as long as it's the initial headers
+      res.cookie('browserId', browserId, {
+        httpOnly: true,
+        maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
+        sameSite: 'none',
+        secure: process.env.NODE_ENV === 'production',
+      });
+
+      const originalFilename = req.file.originalname;
+      console.log(`📁 Processing file: ${originalFilename} (${req.file.size} bytes)`);
+
+      // 4. Parse CSV
+      const { rows, columns } = parseCSVFile(req.file.buffer);
+      console.log(`📊 Parsed ${rows.length} rows with ${columns.length} columns`);
+
+      // 5. Split into batches
+      const batches = splitIntoBatches(rows, BATCH_SIZE);
+      console.log(`🔄 Split into ${batches.length} batch(es) of up to ${BATCH_SIZE} rows`);
+
+      // 6. Process batches through AI (2 concurrent for speed)
+      const allImportedRecords: CRMRecord[] = [];
+      const allSkippedRecords: SkippedRecord[] = [];
+      let completedBatches = 0;
+      const CONCURRENCY = 2;
+
+      for (let i = 0; i < batches.length; i += CONCURRENCY) {
+        const chunk = batches.slice(i, i + CONCURRENCY);
+
+        await Promise.all(
+          chunk.map(async (batch, idx) => {
+            const batchIndex = i + idx;
+            const batchOffset = batchIndex * BATCH_SIZE;
+
+            console.log(
+              `🤖 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} rows)...`
+            );
+
+            try {
+              const extractedRecords = await extractCRMRecords(batch, columns);
+              const { valid, skipped } = validateAndCleanRecords(extractedRecords, batchOffset);
+
+              allImportedRecords.push(...valid);
+              allSkippedRecords.push(...skipped);
+
+              if (extractedRecords.length < batch.length) {
+                const skippedCount = batch.length - extractedRecords.length;
+                for (let j = 0; j < skippedCount; j++) {
+                  allSkippedRecords.push({
+                    rowNumber: batchOffset + extractedRecords.length + j + 1,
+                    data: { _note: 'Record filtered by AI (likely missing email/phone)' },
+                    reason: 'Filtered by AI - no email or mobile number',
+                  });
+                }
+              }
+            } catch (batchError) {
+              console.error(
+                `❌ Batch ${batchIndex + 1} failed:`,
+                batchError instanceof Error ? batchError.message : batchError
+              );
+              for (let j = 0; j < batch.length; j++) {
+                allSkippedRecords.push({
+                  rowNumber: batchOffset + j + 1,
+                  data: batch[j],
+                  reason: `AI processing failed: ${batchError instanceof Error ? batchError.message : 'Unknown error'}`,
+                });
+              }
+            }
+
+            // Stream progress after each batch completes
+            completedBatches++;
+            res.write(`data: ${JSON.stringify({
+              type: 'progress',
+              currentBatch: completedBatches,
+              totalBatches: batches.length
+            })}\n\n`);
+          })
+        );
+      }
+
+      // Sort by row number since parallel batches may finish out of order
+      allSkippedRecords.sort((a, b) => a.rowNumber - b.rowNumber);
+
+      console.log(
+        `✅ Processing complete: ${allImportedRecords.length} imported, ${allSkippedRecords.length} skipped`
+      );
+
+      // 7. Save to MongoDB
+      const importRecord = await Import.create({
+        browserId,
+        originalFilename,
+        totalImported: allImportedRecords.length,
+        totalSkipped: allSkippedRecords.length,
+        crmRecords: allImportedRecords,
+        skippedRecords: allSkippedRecords,
+      });
+
+      console.log(`💾 Saved import record: ${importRecord._id}`);
+
+      // --- STREAM COMPLETE EVENT ---
+      res.write(`data: ${JSON.stringify({
+        type: 'complete',
+        importId: importRecord._id,
+        importedRecords: allImportedRecords,
+        skippedRecords: allSkippedRecords,
+        totalImported: allImportedRecords.length,
+        totalSkipped: allSkippedRecords.length,
+      })}\n\n`);
+
+      res.end();
+    } catch (error) {
+      console.error('Fatal import error:', error);
+
+      // If headers are already sent, stream the error. Otherwise use standard next() error handler.
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Unknown server error'
+        })}\n\n`);
+        res.end();
+      } else {
+        next(error);
+      }
+    }
+  }
+);
+
+export default router;
