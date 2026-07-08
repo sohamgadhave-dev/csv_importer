@@ -1,0 +1,232 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Font ───────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap");
+
+/* ── CSS Custom Properties ─────────────────────────────────────────── */
+:root {
+  --background: #fafafa;
+  --foreground: #18181b;
+  --card-bg: #ffffff;
+  --card-border: #e4e4e7;
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
+  --muted: #71717a;
+  --danger: #ef4444;
+  --danger-bg: #fef2f2;
+  --success: #22c55e;
+  --success-bg: #f0fdf4;
+  --warning: #f59e0b;
+  --warning-bg: #fffbeb;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card-bg: #18181b;
+  --card-border: #27272a;
+  --accent: #4ade80;
+  --accent-hover: #22c55e;
+  --muted: #a1a1aa;
+  --danger: #f87171;
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --success: #4ade80;
+  --success-bg: rgba(34, 197, 94, 0.1);
+  --warning: #fbbf24;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+}
+
+/* ── Base Styles ───────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar Customization ───────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a1a1aa;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #71717a;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* ── Utility Classes ───────────────────────────────────────────────── */
+@layer components {
+  /* Glassmorphism card */
+  .glass-card {
+    @apply rounded-2xl border border-white/20 bg-white/80 shadow-premium backdrop-blur-lg;
+  }
+
+  .dark .glass-card {
+    @apply border-white/5 bg-surface-900/80;
+  }
+
+  /* Premium gradient backgrounds */
+  .gradient-bg {
+    background: linear-gradient(
+      135deg,
+      #f0fdf4 0%,
+      #dcfce7 25%,
+      #fafafa 50%,
+      #f0fdf4 100%
+    );
+  }
+
+  .dark .gradient-bg {
+    background: linear-gradient(
+      135deg,
+      #052e16 0%,
+      #09090b 50%,
+      #14532d 100%
+    );
+  }
+
+  /* Animated gradient border */
+  .gradient-border {
+    position: relative;
+    border-radius: 1rem;
+  }
+
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, #22c55e, #4ade80, #86efac, #22c55e);
+    background-size: 300% 300%;
+    animation: borderShift 4s ease infinite;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .gradient-border:hover::before {
+    opacity: 1;
+  }
+
+  /* Status badges */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
+  }
+
+  .badge-warning {
+    @apply bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400;
+  }
+
+  .badge-info {
+    @apply bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400;
+  }
+
+  /* Primary button */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-500/25 transition-all duration-200 hover:bg-brand-600 hover:shadow-xl hover:shadow-brand-500/30 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-lg;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-surface-200 bg-white px-6 py-3 text-sm font-semibold text-surface-700 shadow-sm transition-all duration-200 hover:bg-surface-50 hover:border-surface-300 hover:-translate-y-0.5 active:translate-y-0 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-surface-600 transition-all duration-200 hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800;
+  }
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────────── */
+@keyframes borderShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* ── Table Styles ──────────────────────────────────────────────────── */
+.table-container {
+  @apply overflow-auto rounded-xl border border-surface-200 dark:border-surface-700;
+  max-height: 500px;
+}
+
+.table-container table {
+  @apply w-full text-sm;
+  min-width: 800px;
+}
+
+.table-container thead {
+  @apply sticky top-0 z-10;
+}
+
+.table-container thead th {
+  @apply whitespace-nowrap border-b border-surface-200 bg-surface-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-surface-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-400;
+}
+
+.table-container tbody tr {
+  @apply border-b border-surface-100 transition-colors hover:bg-surface-50 dark:border-surface-800 dark:hover:bg-surface-800/50;
+}
+
+.table-container tbody td {
+  @apply whitespace-nowrap px-4 py-3 text-surface-700 dark:text-surface-300;
+}
+
+.table-container tbody tr.row-imported {
+  @apply hover:bg-green-50/50 dark:hover:bg-green-900/10;
+}
+
+.table-container tbody tr.row-skipped {
+  @apply bg-red-50/30 hover:bg-red-50/60 dark:bg-red-900/5 dark:hover:bg-red-900/10;
+}
