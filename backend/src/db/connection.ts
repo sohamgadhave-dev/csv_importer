@@ -1,58 +1,63 @@
 /**
- * MongoDB connection module with retry logic.
- * Uses Mongoose to connect to MongoDB Atlas (free M0 tier).
+ * MySQL connection module with connection pooling.
  */
 
-import mongoose from 'mongoose';
+import mysql from 'mysql2/promise';
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 3000;
+let pool: mysql.Pool;
 
 /**
- * Connect to MongoDB with automatic retry on failure.
- * Exits the process if all retries are exhausted.
+ * Initialize MySQL connection pool.
  */
 export async function connectDB(): Promise<void> {
-  const uri = process.env.MONGODB_URI;
+  const host = process.env.DB_HOST || 'localhost';
+  const user = process.env.DB_USER || 'root';
+  const password = process.env.DB_PASSWORD || '';
+  const database = process.env.DB_NAME || 'csv_importer';
 
-  if (!uri) {
-    console.error('MONGODB_URI is not set in environment variables');
+  try {
+    pool = mysql.createPool({
+      host,
+      user,
+      password,
+      database,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0
+    });
+
+    // Test connection
+    const connection = await pool.getConnection();
+    console.log(`✅ Connected to MySQL Database: ${database}`);
+    connection.release();
+  } catch (error) {
+    console.error('❌ MySQL connection failed:', error instanceof Error ? error.message : error);
     process.exit(1);
-  }
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      await mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
-      });
-      console.log('✅ Connected to MongoDB Atlas');
-      return;
-    } catch (error) {
-      console.error(
-        `❌ MongoDB connection attempt ${attempt}/${MAX_RETRIES} failed:`,
-        error instanceof Error ? error.message : error
-      );
-
-      if (attempt === MAX_RETRIES) {
-        console.error('All MongoDB connection attempts exhausted. Exiting.');
-        process.exit(1);
-      }
-
-      console.log(`Retrying in ${RETRY_DELAY_MS / 1000}s...`);
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-    }
   }
 }
 
 /**
- * Gracefully close the MongoDB connection.
+ * Gracefully close the MySQL connection pool.
  */
 export async function disconnectDB(): Promise<void> {
   try {
-    await mongoose.disconnect();
-    console.log('MongoDB disconnected');
+    if (pool) {
+      await pool.end();
+      console.log('MySQL pool disconnected');
+    }
   } catch (error) {
-    console.error('Error disconnecting from MongoDB:', error);
+    console.error('Error disconnecting from MySQL:', error);
   }
+}
+
+/**
+ * Get the connection pool for queries.
+ */
+export function getPool(): mysql.Pool {
+  if (!pool) {
+    throw new Error('Database pool has not been initialized. Call connectDB() first.');
+  }
+  return pool;
 }

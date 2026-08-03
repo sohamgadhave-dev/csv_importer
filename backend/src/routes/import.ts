@@ -10,7 +10,7 @@ import { parseCSVFile } from '../services/csvParser';
 import { splitIntoBatches } from '../services/batchSplitter';
 import { extractCRMRecords } from '../services/aiExtractor';
 import { validateAndCleanRecords } from '../services/recordValidator';
-import { Import } from '../models/Import';
+import { dbHelpers } from '../db/queries';
 import { BATCH_SIZE } from '../config/constants';
 import type { CRMRecord, SkippedRecord } from '../types/crm';
 
@@ -178,22 +178,56 @@ router.post(
         `✅ Processing complete: ${uniqueRecords.length} imported, ${allSkippedRecords.length} skipped`
       );
 
-      // 7. Save to MongoDB
-      const importRecord = await Import.create({
-        browserId,
-        originalFilename,
-        totalImported: uniqueRecords.length,
-        totalSkipped: allSkippedRecords.length,
-        crmRecords: uniqueRecords,
-        skippedRecords: allSkippedRecords,
-      });
+      // 7. Save to MySQL with Transaction
+      const connection = await dbHelpers.getConnection();
+      let importId: number;
 
-      console.log(`💾 Saved import record: ${importRecord._id}`);
+      try {
+        await connection.beginTransaction();
+
+        // Insert into imports table
+        const [importResult] = await connection.execute<import('mysql2').ResultSetHeader>(
+          `INSERT INTO imports (original_filename, browser_id, total_imported, total_skipped) 
+           VALUES (?, ?, ?, ?)`,
+          [originalFilename, browserId, uniqueRecords.length, allSkippedRecords.length]
+        );
+        importId = importResult.insertId;
+
+        // Bulk insert CRM records
+        if (uniqueRecords.length > 0) {
+          const crmValues = dbHelpers.formatCRMRecordsForInsert(importId, uniqueRecords);
+          await connection.query(
+            `INSERT INTO crm_records 
+             (import_id, name, email, phone, company, city, state, country, crm_status, data_source, notes) 
+             VALUES ?`,
+            [crmValues]
+          );
+        }
+
+        // Bulk insert skipped records
+        if (allSkippedRecords.length > 0) {
+          const skippedValues = dbHelpers.formatSkippedRecordsForInsert(importId, allSkippedRecords);
+          await connection.query(
+            `INSERT INTO skipped_records (import_id, \`row_number\`, reason, raw_data) 
+             VALUES ?`,
+            [skippedValues]
+          );
+        }
+
+        await connection.commit();
+        console.log(`💾 Saved import record: ${importId}`);
+      } catch (dbError) {
+        await connection.rollback();
+        console.error('❌ Database transaction failed, rolled back:', dbError);
+        throw dbError;
+      } finally {
+        connection.release();
+      }
 
       // --- STREAM COMPLETE EVENT ---
       res.write(`data: ${JSON.stringify({
         type: 'complete',
-        importId: importRecord._id,
+        importId: importId,
         importedRecords: uniqueRecords,
         skippedRecords: allSkippedRecords,
         totalImported: uniqueRecords.length,

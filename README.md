@@ -24,7 +24,7 @@ An intelligent CSV importer that accepts files with any column structure, uses G
 |-------|-----------|
 | Frontend | Next.js 14 (App Router) + TypeScript + Tailwind CSS 3 |
 | Backend | Express 4 + TypeScript |
-| Database | MongoDB Atlas (Mongoose 8) |
+| Database | MySQL |
 | AI | Google Gemini 1.5 Flash + Groq Llama 3.1 8B fallback |
 | Validation | Zod 3 |
 | CSV Parsing | PapaParse (frontend) + csv-parse (backend) |
@@ -35,7 +35,7 @@ An intelligent CSV importer that accepts files with any column structure, uses G
 ## 📋 Prerequisites
 
 - **Node.js** 18+ (with npm)
-- **MongoDB Atlas** account (free M0 cluster) — [mongodb.com/atlas](https://mongodb.com/atlas)
+- **Database:** MySQL
 - **Google Gemini API key** (free, no credit card) — [ai.google.dev](https://ai.google.dev)
 - **Groq API key** (free, no credit card) — [console.groq.com](https://console.groq.com)
 
@@ -60,7 +60,10 @@ npm install
 Create a `.env` file (or edit the existing one):
 
 ```env
-MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/groweasy
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=csv_importer
 GEMINI_API_KEY=your_gemini_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
 PORT=3001
@@ -114,16 +117,14 @@ npm run dev
 3. Set root directory to `backend`
 4. Build command: `npm install && npm run build`
 5. Start command: `npm start`
-6. Add environment variables: `MONGODB_URI`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `PORT=3001`, `FRONTEND_URL`
+6. Add environment variables: `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `PORT=3001`, `FRONTEND_URL`
 7. Deploy
 
-### MongoDB Atlas
+### MySQL Database
 
-1. Go to [mongodb.com/atlas](https://mongodb.com/atlas)
-2. Create free M0 cluster (512MB)
-3. Create database user and get connection string
-4. Whitelist IPs (or allow all: `0.0.0.0/0`)
-5. Use the connection string as `MONGODB_URI`
+1. Create a new MySQL instance
+2. Create database `csv_importer`
+3. Run the migrations/schema script provided in the `backend/schema.sql` file
 
 ### Gemini & Groq APIs
 
@@ -242,7 +243,7 @@ intern-project/
 │       │   ├── batchSplitter.ts # Row batching logic
 │       │   └── recordValidator.ts # Zod schema validation
 │       ├── models/
-│       │   └── Import.ts        # Mongoose import schema
+│       │   └── Import.ts        # Sequelize/TypeORM import model
 │       ├── config/
 │       │   └── constants.ts     # Enums, limits, AI config
 │       ├── middleware/
@@ -251,7 +252,7 @@ intern-project/
 │       ├── types/
 │       │   └── crm.ts           # Shared TypeScript types
 │       └── db/
-│           └── connection.ts    # MongoDB connection + retry
+│           └── connection.ts    # MySQL connection + pool
 │
 └── README.md                    # This file
 ```
@@ -301,6 +302,18 @@ After Gemini returns results, a Zod schema validator:
 
 ### Quick Test Flow
 
+### 4. Setup MySQL Database
+
+Ensure you have MySQL installed and running locally, or use a remote MySQL server.
+Create a database named `csv_importer` and run the provided schema:
+
+```bash
+mysql -u root -p < schema.sql
+```
+
+Alternatively, you can manually run the contents of `schema.sql` in your SQL client.
+
+### 5. Start the Development Servers
 1. Start both servers (backend on :3001, frontend on :3000)
 2. Open http://localhost:3000
 3. Upload a CSV file (drag & drop or click)

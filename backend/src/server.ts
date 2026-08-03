@@ -14,6 +14,8 @@ import { connectDB } from './db/connection';
 import { errorHandler } from './middleware/errorHandler';
 import importRoutes from './routes/import';
 import historyRoutes from './routes/history';
+import recordsRoutes from './routes/records';
+import reportsRoutes from './routes/reports';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -43,6 +45,8 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/import', importRoutes);
 app.use('/api/imports', historyRoutes);
+app.use('/api/records', recordsRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // ── Error Handling ─────────────────────────────────────────────────────
 app.use(errorHandler);
