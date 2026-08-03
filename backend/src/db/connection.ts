@@ -14,10 +14,12 @@ export async function connectDB(): Promise<void> {
   const user = process.env.DB_USER || 'root';
   const password = process.env.DB_PASSWORD || '';
   const database = process.env.DB_NAME || 'csv_importer';
+  const port = parseInt(process.env.DB_PORT || '3306', 10);
 
   try {
     pool = mysql.createPool({
       host,
+      port,
       user,
       password,
       database,
@@ -25,7 +27,9 @@ export async function connectDB(): Promise<void> {
       connectionLimit: 10,
       queueLimit: 0,
       enableKeepAlive: true,
-      keepAliveInitialDelay: 0
+      keepAliveInitialDelay: 0,
+      // Enable SSL for cloud database providers (Aiven, TiDB, etc.)
+      ...(process.env.NODE_ENV === 'production' ? { ssl: { rejectUnauthorized: true } } : {})
     });
 
     // Test connection
