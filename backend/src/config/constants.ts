@@ -27,7 +27,7 @@ export const BATCH_SIZE = 20;
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 /** Gemini model identifier */
-export const GEMINI_MODEL = 'gemini-1.5-flash';
+export const GEMINI_MODEL = 'gemini-2.0-flash';
 
 /** Groq model identifier for fallback */
 export const GROQ_MODEL = 'llama-3.1-8b-instant';
