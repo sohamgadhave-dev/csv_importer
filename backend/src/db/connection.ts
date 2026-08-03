@@ -36,9 +36,65 @@ export async function connectDB(): Promise<void> {
     const connection = await pool.getConnection();
     console.log(`✅ Connected to MySQL Database: ${database}`);
     connection.release();
+
+    // Auto-create tables if they don't exist
+    await initializeTables();
   } catch (error) {
     console.error('❌ MySQL connection failed:', error instanceof Error ? error.message : error);
     process.exit(1);
+  }
+}
+
+/**
+ * Create required tables if they don't exist (auto-migration).
+ */
+async function initializeTables(): Promise<void> {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS imports (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        original_filename VARCHAR(255) NOT NULL,
+        browser_id VARCHAR(255) NOT NULL,
+        total_imported INT NOT NULL DEFAULT 0,
+        total_skipped INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_records (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        import_id INT NOT NULL,
+        name VARCHAR(255),
+        email VARCHAR(255),
+        phone VARCHAR(100),
+        company VARCHAR(255),
+        city VARCHAR(255),
+        state VARCHAR(255),
+        country VARCHAR(255),
+        crm_status VARCHAR(100) DEFAULT 'New',
+        data_source VARCHAR(100),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (import_id) REFERENCES imports(id) ON DELETE CASCADE
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS skipped_records (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        import_id INT NOT NULL,
+        \`row_number\` INT,
+        reason TEXT NOT NULL,
+        raw_data JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (import_id) REFERENCES imports(id) ON DELETE CASCADE
+      )
+    `);
+
+    console.log('✅ Database tables verified/created');
+  } catch (error) {
+    console.error('❌ Failed to initialize tables:', error instanceof Error ? error.message : error);
   }
 }
 
